@@ -40,7 +40,7 @@ my $MY_CNF 	= '/root/.my.cnf';
 my $DBUSER	= '';	# will be read from $MY_CNF
 my $DBPASS	= '';	# will be read from $MY_CNF
 
-my $DATA_DIR = "/usr/local/mysql/var";
+my $DATA_DIR = "/var/lib/mysql";
 # name of your update log. probably your hostname
 my $UPDATE_LOG_BASE	= "$DATA_DIR/$HOSTNAME";
 # where will database backups be dumped?
@@ -94,7 +94,7 @@ foreach my $db_name (@db_names) {
 	my $dump_file = "$DUMP_DIR/$timestamp.$db_name.sql";
     # http://dev.mysql.com/doc/mysql/en/mysqldump.html
 	#my $dump_command = "/usr/bin/mysqldump -c -e -l -q --flush-logs $db_name > $dump_file";
-	my $dump_command = "/usr/local/mysql/bin/mysqldump --defaults-extra-file=$MY_CNF --opt $db_name > $dump_file";
+	my $dump_command = "/usr/bin/mysqldump --defaults-extra-file=$MY_CNF --opt '$db_name' > '$dump_file'";
 	system $dump_command;
 }
 
