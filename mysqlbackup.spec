@@ -25,7 +25,7 @@ Using /root/.my.cnf for auth, backup all mysql databases to /var/backup.
 %{__install} -m 755 %{name}.pl %{buildroot}%{_bindir}/
 %{__install} -d %{buildroot}%{_sysconfdir}/cron.daily
 %{__install} -d %{buildroot}%{_localstatedir}/backup/mysql
-%{__install} -m 644 %{name}.cron %{buildroot}%{_sysconfdir}/cron.daily/%{name}
+%{__install} -m 755 %{name}.cron %{buildroot}%{_sysconfdir}/cron.daily/%{name}
 
 %clean
 %{__rm} -fr %{buildroot}
