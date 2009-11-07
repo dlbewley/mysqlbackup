@@ -32,8 +32,8 @@
 ################################################################################
 # Adjust the following for your site.
 my $DATABASE	= 'mysql'; # db used to create a handle for listing all db's
-#my $HOSTNAME	= 'libdev2';
 my $HOSTNAME	= 'localhost';
+my @EXCLUDE_DBS = qw( );
 
 # See http://www.mysql.com/php/manual.php3?section=Option_files
 my $MY_CNF 	= '/root/.my.cnf'; 
@@ -91,6 +91,9 @@ my $timestamp = "$date.$time";
 
 # dump all the DBs we want to backup
 foreach my $db_name (@db_names) {
+    # skip static databases - this is ugly
+    next if (grep( /^$db_name$/, @EXCLUDE_DBS));
+
 	my $dump_file = "$DUMP_DIR/$timestamp.$db_name.sql";
     # http://dev.mysql.com/doc/mysql/en/mysqldump.html
 	#my $dump_command = "/usr/bin/mysqldump -c -e -l -q --flush-logs $db_name > $dump_file";
