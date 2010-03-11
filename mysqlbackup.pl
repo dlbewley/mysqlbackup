@@ -3,19 +3,11 @@
 # $Id$
 # mysqlbackup.pl v1.0 dale@bewley.net 04/22/2000 
 #-------------------------------------------------------------------------------
-# Based on:
+# Based on ideas from:
 #  http://perl.apache.org/guide/snippets.html#Mysql_Backup_and_Restore_Scripts
-#
-# Changes to the original
-#	o Added feature to get list of databases. Why doesn't DBI->data_sources
-#	  work?
-#	o Read password from .my.cnf file.
-#	o Changed file naming scheme to put year first.
-#	o Replaced the rename function with File::Copy (move).
-#	o Changed format of mysqldump command. Is it better?
-#
+#  http://jeremy.zawodny.com/mysql/mysqlsnapshot/
 # 
-# What this script does
+# What this script does:
 # 	1. obtain a list of databases
 # 	2. dump all the databases into a separate dump files (these dump files 
 # 	are ready for DB restore)
@@ -25,63 +17,129 @@
 # Todo
 #	o No need to do a full dump each time, add a switch to only rotate
 #	  the update log.
-#	o Write a log or mail a summary when finished.
+#	o Log actions
 #
 ################################################################################
 
-################################################################################
-# Adjust the following for your site.
-my $DATABASE	= 'mysql'; # db used to create a handle for listing all db's
-my $HOSTNAME	= 'localhost';
-my @EXCLUDE_DBS = qw( );
-
-# See http://www.mysql.com/php/manual.php3?section=Option_files
-my $MY_CNF 	= '/root/.my.cnf'; 
-my $DBUSER	= '';	# will be read from $MY_CNF
-my $DBPASS	= '';	# will be read from $MY_CNF
-
-my $DATA_DIR = "/var/lib/mysql";
-# name of your update log. probably your hostname
-my $UPDATE_LOG_BASE	= "$DATA_DIR/$HOSTNAME";
-# where will database backups be dumped?
-my $DUMP_DIR  	= "/var/backup/mysql";
-# solaris
-#my $MYSQL_ADMIN_EXEC = "/usr/local/mysql/bin/mysqladmin";
-# linux
-my $MYSQL_ADMIN_EXEC = "/usr/bin/mysqladmin";
-my $GZIP_EXEC 	= "/bin/gzip";
-my $VERBOSE = 0;
-################################################################################
-
-
 use strict;
-use File::Copy;
+use warnings;
 use DBI;
+use Getopt::Long;
 
-if ($MY_CNF) {
+## Prototypes
+
+sub Hashes($);
+sub Execute($);
+sub help();
+sub get_mysql_vars();
+
+my %conf = (
+################################################################################
+# Adjust the following defaults for your site.
+    database	=> 'mysql', # db used to create a handle for listing all db's
+    host  	    => 'localhost',
+    exclude_dbs => [ qw( information_schema ) ],
+    min_binary_logs => 4,
+
+    # See http://www.mysql.com/php/manual.php3?section=>Option_files
+    my_cnf 	=> '/root/.my.cnf', 
+    user	=> '',	# will be read from $conf{'my_cnf'}
+    pass	=> '',	# will be read from $conf{'my_cnf'}
+
+    # where will database backups be dumped?
+    dump_dir  	=> "/var/backup/mysql",
+    # solaris
+    #my $conf{'mysql_admin_exec'} => "/usr/local/mysql/bin/mysqladmin",
+    # linux
+    mysql_admin_exec => "/usr/bin/mysqladmin",
+    gzip_exec 	=> "/bin/gzip",
+    not_master => 0,
+################################################################################
+    help       => 0,
+    test       => 0,
+    verbose    => 0,
+);
+
+GetOptions(
+           "h|help"             => \$conf{help},
+           "u|user=s"           => \$conf{user},
+           "m|mycnf=s"          => \$conf{mycnf},
+           "p|pass|password=s"  => \$conf{pass},
+           "d|dir|dumpdir=s"    => \$conf{dump_dir},
+           "v|verbose"          => \$conf{verbose},
+           "t|test"             => \$conf{test},
+           "n|nomaster"         => \$conf{not_master},
+          );
+
+if ($conf{'help'}) { help() && exit; }
+
+sub help() {
+   print "Help!\n";
+}
+
+################################################################################
+# begin main
+if ($conf{'my_cnf'} && ! $conf{'pass'}) {
 	# read username and password from .my.cnf file
-	open (MY_CNF,"<$MY_CNF") || 
+	open (MY_CNF,"<$conf{'my_cnf'}") || 
 		warn "Can't read db password, can't read list of databases." .
 			" Will attempt to rotate transaction log.";
 	while (<MY_CNF>) {
 		# skip comments
 		(/^\s*[#|;]/ && next) || chomp;
 		my ($key,$val) = split(/\s*=\s*/);
-		if ($key eq 'user') { $DBUSER = $val; }
-		if ($key eq 'password') { $DBPASS = $val; } 
+        # don't clobber user supplied values
+        if ($key eq 'user')     { !$conf{'user'} && ($conf{'user'} = $val) }
+		if ($key eq 'password') { !$conf{'pass'} && ($conf{'pass'} = $val) } 
 	}
 }
 
-# get list of databases. why doesn't DBI->data_sources('mysql') work ??
-my $dbh = DBI->connect("DBI:mysql:$DATABASE:$HOSTNAME", $DBUSER, $DBPASS);
+# get list of databases.
+print "Connecting to DB $conf{'database'} on $conf{'host'} as $conf{'user'}\n" if ($conf{'verbose'});
+my $dbh = DBI->connect("DBI:mysql:$conf{'database'}:$conf{'host'}", $conf{'user'}, $conf{'pass'});
+$dbh->{RaiseError} = 1;
+
 my @db_names = $dbh->func('_ListDBs');
-$dbh->disconnect;
+print "Found DBs ", join(', ', @db_names), "\n" if ($conf{'verbose'});
 
 # did we get a list?
 $db_names[0] || warn "Can not find list of databases. No dumps made. " .
 		"Will attempt to rotate transaction log.";
 
-$VERBOSE && print "Backing up: " . join ", ", @db_names;
+# get list of mysql variables
+my $vars = get_mysql_vars();
+#foreach my $key (sort keys %$vars) {
+#    print "$key -> $$vars{$key}\n";
+#}
+
+# restart the update log to log to a new file!
+system $conf{'mysql_admin_exec'}, 'refresh' if (! $conf{'test'});
+
+# check if binary logging is enabled.
+if ($vars->{'log_bin'} eq 'ON') {
+   print "Binary logging is enabled\n" if ($conf{'verbose'});
+
+    my $log_sql ='show master logs';
+    my $log_sth = $dbh->prepare($log_sql);
+    $log_sth->execute();
+    my $binary_logs = $log_sth->fetchall_arrayref();
+    print "Found ", scalar @$binary_logs, " logs\n" if ($conf{'verbose'});
+
+    if (scalar @$binary_logs > $conf{'min_binary_logs'}) {
+        print "Purging logs older than $conf{'min_binary_logs'} latest logs\n" if ($conf{'verbose'});
+        my $purge_stm = "purge master logs to '" . 
+            $$binary_logs[-$conf{'min_binary_logs'}][0] . "'";
+        print "$purge_stm\n" if ($conf{'verbose'});
+        if (! $conf{'test'}) {
+            $dbh->do($purge_stm) || warn "Failed to purge logs $!";
+        }
+    }
+} else {
+    print "To enable binary logging add 'bin-log' to the '[mysqld]' section of my.cnf\n" if ($conf{'verbose'});
+}
+
+# we use mysqladmin from here on out
+$dbh->disconnect;
 
 # convert unix time to date + time
 my ($sec,$min,$hour,$mday,$mon,$year) = localtime(time);
@@ -92,17 +150,79 @@ my $timestamp = "$date.$time";
 # dump all the DBs we want to backup
 foreach my $db_name (@db_names) {
     # skip static databases - this is ugly
-    next if (grep( /^$db_name$/, @EXCLUDE_DBS));
+    next if (grep( /^$db_name$/, @{$conf{'exclude_dbs'}}));
+    print "Backing up: $db_name\n" if ($conf{'verbose'});
 
-	my $dump_file = "$DUMP_DIR/$timestamp.$db_name.sql";
+	my $dump_file = "$conf{'dump_dir'}/$timestamp.$db_name.sql";
     # http://dev.mysql.com/doc/mysql/en/mysqldump.html
-	#my $dump_command = "/usr/bin/mysqldump -c -e -l -q --flush-logs $db_name > $dump_file";
-	my $dump_command = "/usr/bin/mysqldump --defaults-extra-file=$MY_CNF --opt '$db_name' > '$dump_file'";
-	system $dump_command;
+    # TODO add support for command line user / pass
+	my $dump_command = "/usr/bin/mysqldump --defaults-extra-file=$conf{'my_cnf'} --opt '$db_name' > '$dump_file'";
+    if (! $conf{'test'}) {
+        system $dump_command;
+    } else {
+        print "Not executing: $dump_command\n";
+    }
 }
 
-# restart the update log to log to a new file!
-system $MYSQL_ADMIN_EXEC, 'refresh';
-
 # compress all the created files
-system "$GZIP_EXEC $DUMP_DIR/$timestamp.*";
+system "$conf{'gzip_exec'} $conf{'dump_dir'}/$timestamp.*" if (! $conf{'test'});
+
+#-------------------------------------------------------------------------------
+
+## Fetch SHOW VARIABLES
+##
+sub get_mysql_vars() {
+    my %vars;
+    my @rows = Hashes("SHOW VARIABLES");
+
+    foreach my $row (@rows) {
+        my $name  = $row->{Variable_name};
+        my $value = $row->{Value};
+
+        $vars{$name} = $value;
+    }
+
+    return \%vars;
+}
+
+## Run a query and return the records as an array of hashes.
+sub Hashes($) {
+    my $sql   = shift;
+
+    my @records;
+
+    if (my $sth = Execute($sql)) {
+        while (my $ref = $sth->fetchrow_hashref) {
+            push @records, $ref;
+        }
+    }
+
+    return @records;
+}
+
+## Execute an SQL query and return the statement handle.
+sub Execute($)
+{
+    my $sql = shift;
+
+    ##
+    ## Prepare the statement
+    ##
+    my $sth = $dbh->prepare($sql);
+
+    if (not $sth) {
+        die $DBI::errstr;
+    }
+
+    ##
+    ## Execute the statement.
+    ##
+
+    my $ReturnCode = $sth->execute;
+
+    if (not $ReturnCode) {
+        return undef;
+    }
+
+    return $sth;
+}
