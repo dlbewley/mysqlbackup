@@ -1,8 +1,9 @@
 #!/usr/bin/perl -w
 ################################################################################
-# $Id$
-# mysqlbackup.pl v1.0 dale@bewley.net 04/22/2000 
+my $VERSION='$Id$';
 #-------------------------------------------------------------------------------
+# mysqlbackup.pl v1.0 dale@bewley.net 04/22/2000 
+#
 # Based on ideas from:
 #  http://perl.apache.org/guide/snippets.html#Mysql_Backup_and_Restore_Scripts
 #  http://jeremy.zawodny.com/mysql/mysqlsnapshot/
@@ -26,64 +27,106 @@ use warnings;
 use DBI;
 use Getopt::Long;
 
-## Prototypes
-
-sub Hashes($);
-sub Execute($);
-sub help();
+# Prototypes
+sub query_to_hash($);
+sub run_query($);
+sub help($);
 sub get_mysql_vars();
 
-my %conf = (
 ################################################################################
 # Adjust the following defaults for your site.
-    database	=> 'mysql', # db used to create a handle for listing all db's
-    host  	    => 'localhost',
-    exclude_dbs => [ qw( information_schema ) ],
-    min_binary_logs => 4,
-
+my %conf = (
     # See http://www.mysql.com/php/manual.php3?section=>Option_files
-    my_cnf 	=> '/root/.my.cnf', 
-    user	=> '',	# will be read from $conf{'my_cnf'}
-    pass	=> '',	# will be read from $conf{'my_cnf'}
+    my_cnf 	    => '/root/.my.cnf', # may contain user and password
+    user	    => '',	# will be read from $conf{'my_cnf'}
+    pass	    => '',	# will be read from $conf{'my_cnf'}
+    database	=> 'mysql', # db used to create a handle for listing all db's
+    host  	    => 'localhost', # host running mysql to be backed up
+    exclude_dbs => [ qw( information_schema ) ], # do not backup these DBs
 
-    # where will database backups be dumped?
-    dump_dir  	=> "/var/backup/mysql",
-    # solaris
-    #my $conf{'mysql_admin_exec'} => "/usr/local/mysql/bin/mysqladmin",
-    # linux
+    dump_dir   => "/var/backup/mysql", # where to place backups
+    min_binary_logs => 4, # how many logs to retain
+    test       => 0, # don't make any changes
+    verbose    => 0, # chatty kathy
+    help       => 0, # show help and exit
+    not_master => 0, # TODO unused
+
+    # executables
     mysql_admin_exec => "/usr/bin/mysqladmin",
-    gzip_exec 	=> "/bin/gzip",
-    not_master => 0,
-################################################################################
-    help       => 0,
-    test       => 0,
-    verbose    => 0,
+    gzip_exec  => "/bin/gzip",
 );
+################################################################################
 
 GetOptions(
-           "h|help"             => \$conf{help},
-           "u|user=s"           => \$conf{user},
-           "m|mycnf=s"          => \$conf{mycnf},
-           "p|pass|password=s"  => \$conf{pass},
-           "d|dir|dumpdir=s"    => \$conf{dump_dir},
-           "v|verbose"          => \$conf{verbose},
-           "t|test"             => \$conf{test},
-           "n|nomaster"         => \$conf{not_master},
-          );
+    "h|help"             => \$conf{help},
+    "host=s"             => \$conf{host},
+    "u|user=s"           => \$conf{user},
+    "p|pass|password=s"  => \$conf{pass},
+    "m|mycnf=s"          => \$conf{my_cnf},
+    "s|skip-database=s@" => \$conf{exclude_dbs},
+    "l|min-logs=i"       => \$conf{min_binary_logs},
+    "d|dir|dump-dir=s"   => \$conf{dump_dir},
+    "v|verbose"          => \$conf{verbose},
+    "t|test"             => \$conf{test},
+    "n|nomaster"         => \$conf{not_master},
+);
 
-if ($conf{'help'}) { help() && exit; }
+if ($conf{'help'}) { help(\%conf) && exit; }
 
-sub help() {
-   print "Help!\n";
+sub help($) {
+   my $conf = shift;
+   my $exclude_dbs = join(' ',@{$conf->{'exclude_dbs'}});
+   print <<"EOH";
+$VERSION
+
+Usage: $0 [options]
+
+ Options            Defaults
+   -h | --help      This screen.
+
+   -m | --mycnf     $conf->{'my_cnf'}
+                    Specify my.cnf file containing user and password.
+
+   -u | --user	    $conf->{'user'}
+                    Specify mysql user, or it will be read from $conf->{'my_cnf'}.
+
+   -p | --pass	    $conf->{'pass'}
+                    Specify mysql password, or it will be read from $conf->{'pass'}.
+
+   --host           $conf->{'host'}
+                    Host running mysql to be backed up.
+
+   -s | --skip-database  $exclude_dbs
+                    Do not backup these databases. Perhaps you have a read-only
+                    database which needs infrequent backups.
+
+   -d | --dir | --dump-dir $conf->{'dump_dir'}
+                    Where to place backups.
+
+   -l | --min-logs  $conf->{'min_binary_logs'}
+                    Retain at least this many binary logs.
+
+   -v | --verbose   $conf->{'verbose'}
+                    Provide more feedback.
+
+   -t | --test      $conf->{'test'}
+                    Go through the motions, but do not write or change anything.
+EOH
 }
+
 
 ################################################################################
 # begin main
+if (! -w $conf{'dump_dir'}) {
+    die "Can not write to $conf{'dump_dir'} $!";
+}
+
+# setup mysql login credentials
 if ($conf{'my_cnf'} && ! $conf{'pass'}) {
 	# read username and password from .my.cnf file
-	open (MY_CNF,"<$conf{'my_cnf'}") || 
-		warn "Can't read db password, can't read list of databases." .
-			" Will attempt to rotate transaction log.";
+    print "No password specified. Checking $conf{'my_cnf'}\n" if ($conf{'verbose'});
+	open (MY_CNF,"<$conf{'my_cnf'}") || die "Can not read $conf{'my_cnf'} $!";
+
 	while (<MY_CNF>) {
 		# skip comments
 		(/^\s*[#|;]/ && next) || chomp;
@@ -93,52 +136,52 @@ if ($conf{'my_cnf'} && ! $conf{'pass'}) {
 		if ($key eq 'password') { !$conf{'pass'} && ($conf{'pass'} = $val) } 
 	}
 }
+unless ($conf{'user'} && $conf{'pass'}) { die "Missing mysql login credentials. $!"; }
 
-# get list of databases.
-print "Connecting to DB $conf{'database'} on $conf{'host'} as $conf{'user'}\n" if ($conf{'verbose'});
+# connect to mysql
+print "Connecting to database '$conf{'database'}' on '$conf{'host'}' as '$conf{'user'}'\n" if ($conf{'verbose'});
 my $dbh = DBI->connect("DBI:mysql:$conf{'database'}:$conf{'host'}", $conf{'user'}, $conf{'pass'});
 $dbh->{RaiseError} = 1;
 
+# get list of databases.
 my @db_names = $dbh->func('_ListDBs');
-print "Found DBs ", join(', ', @db_names), "\n" if ($conf{'verbose'});
+print "Found databases: ", join(', ', @db_names), "\n" if ($conf{'verbose'});
 
 # did we get a list?
-$db_names[0] || warn "Can not find list of databases. No dumps made. " .
-		"Will attempt to rotate transaction log.";
+$db_names[0] || die "Can not find list of databases. $!";
 
 # get list of mysql variables
 my $vars = get_mysql_vars();
-#foreach my $key (sort keys %$vars) {
-#    print "$key -> $$vars{$key}\n";
-#}
+#foreach my $key (sort keys %$vars) { print "$key -> $$vars{$key}\n"; }
 
-# restart the update log to log to a new file!
+# flush tables and rotate binary log
+print "Flushing tables and rotating binary log if enabled\n" if ($conf{'verbose'});
 system $conf{'mysql_admin_exec'}, 'refresh' if (! $conf{'test'});
 
 # check if binary logging is enabled.
 if ($vars->{'log_bin'} eq 'ON') {
-   print "Binary logging is enabled\n" if ($conf{'verbose'});
+    print "Binary logging is enabled\n" if ($conf{'verbose'});
 
-    my $log_sql ='show master logs';
-    my $log_sth = $dbh->prepare($log_sql);
-    $log_sth->execute();
-    my $binary_logs = $log_sth->fetchall_arrayref();
-    print "Found ", scalar @$binary_logs, " logs\n" if ($conf{'verbose'});
+    # returns Log_name, File_size for each binary log
+    my @binary_logs = query_to_hash('show master logs');
+    print "Found ", scalar @binary_logs, " logs\n" if ($conf{'verbose'});
 
-    if (scalar @$binary_logs > $conf{'min_binary_logs'}) {
+    if (scalar @binary_logs > $conf{'min_binary_logs'}) {
         print "Purging logs older than $conf{'min_binary_logs'} latest logs\n" if ($conf{'verbose'});
         my $purge_stm = "purge master logs to '" . 
-            $$binary_logs[-$conf{'min_binary_logs'}][0] . "'";
+            $binary_logs[-$conf{'min_binary_logs'}]{'Log_name'} . "'";
         print "$purge_stm\n" if ($conf{'verbose'});
+
         if (! $conf{'test'}) {
             $dbh->do($purge_stm) || warn "Failed to purge logs $!";
         }
     }
+
 } else {
     print "To enable binary logging add 'bin-log' to the '[mysqld]' section of my.cnf\n" if ($conf{'verbose'});
 }
 
-# we use mysqladmin from here on out
+# we are done with mysql, we use mysqladmin from here on out
 $dbh->disconnect;
 
 # convert unix time to date + time
@@ -149,7 +192,6 @@ my $timestamp = "$date.$time";
 
 # dump all the DBs we want to backup
 foreach my $db_name (@db_names) {
-    # skip static databases - this is ugly
     next if (grep( /^$db_name$/, @{$conf{'exclude_dbs'}}));
     print "Backing up: $db_name\n" if ($conf{'verbose'});
 
@@ -160,38 +202,23 @@ foreach my $db_name (@db_names) {
     if (! $conf{'test'}) {
         system $dump_command;
     } else {
-        print "Not executing: $dump_command\n";
+        print "#$dump_command\n";
     }
 }
 
 # compress all the created files
 system "$conf{'gzip_exec'} $conf{'dump_dir'}/$timestamp.*" if (! $conf{'test'});
 
-#-------------------------------------------------------------------------------
 
-## Fetch SHOW VARIABLES
-##
-sub get_mysql_vars() {
-    my %vars;
-    my @rows = Hashes("SHOW VARIABLES");
+################################################################################
+# begin functions
 
-    foreach my $row (@rows) {
-        my $name  = $row->{Variable_name};
-        my $value = $row->{Value};
-
-        $vars{$name} = $value;
-    }
-
-    return \%vars;
-}
-
-## Run a query and return the records as an array of hashes.
-sub Hashes($) {
-    my $sql   = shift;
-
+# execute query, and return results in an array of hashes.
+sub query_to_hash($) {
+    my $sql = shift;
     my @records;
 
-    if (my $sth = Execute($sql)) {
+    if (my $sth = run_query($sql)) {
         while (my $ref = $sth->fetchrow_hashref) {
             push @records, $ref;
         }
@@ -200,29 +227,33 @@ sub Hashes($) {
     return @records;
 }
 
-## Execute an SQL query and return the statement handle.
-sub Execute($)
-{
+# run_query an SQL query and return the statement handle.
+sub run_query($) {
     my $sql = shift;
 
-    ##
-    ## Prepare the statement
-    ##
     my $sth = $dbh->prepare($sql);
-
-    if (not $sth) {
+    if (! $sth) {
         die $DBI::errstr;
     }
 
-    ##
-    ## Execute the statement.
-    ##
-
-    my $ReturnCode = $sth->execute;
-
-    if (not $ReturnCode) {
+    my $result = $sth->execute;
+    if (! $result) {
         return undef;
     }
 
     return $sth;
+}
+
+# load mysql status variables into a hash
+sub get_mysql_vars() {
+    my %vars;
+    my @rows = query_to_hash("show variables");
+
+    foreach my $row (@rows) {
+        my $name  = $row->{Variable_name};
+        my $value = $row->{Value};
+        $vars{$name} = $value;
+    }
+
+    return \%vars;
 }
