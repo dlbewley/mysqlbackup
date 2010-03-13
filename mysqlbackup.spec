@@ -1,8 +1,8 @@
 # $Id$
 Summary: Automate backup of mysql databases.
 Name: mysqlbackup
-Version: 1.2
-Release: 11.%(date +%%Y%%m%%d).ucd%{?dist}
+Version: 2.0
+Release: 1.%(date +%%Y%%m%%d).ucd%{?dist}
 License: GPL+
 Group: Applications/System
 URL: https://cvs.lib.ucdavis.edu/viewvc/%{name}
@@ -14,7 +14,7 @@ Buildroot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 BuildArch: noarch
 
 %description
-Using /root/.my.cnf for auth, backup all mysql databases to /var/backup.
+Tool to backup MySQL databases and manage binary transaction logs.
 
 %prep
 %setup -q -n %{name}
@@ -34,10 +34,13 @@ Using /root/.my.cnf for auth, backup all mysql databases to /var/backup.
 %defattr(-,root,root)
 %attr(644,root,root) %doc README
 %{_bindir}/%{name}.pl
-%{_sysconfdir}/cron.daily/%{name}
+%config(noreplace) %{_sysconfdir}/cron.daily/%{name}
 %dir %{_localstatedir}/backup/mysql
 
 %changelog
+* Thu Mar 12 2010 Dale Bewley <dlbewley@lib.ucdavis.edu>
+- Make crontab a config file allowing for local customization
+
 * Wed Oct 07 2009 Dale Bewley <dlbewley@lib.ucdavis.edu>
 - Update spec buildroot and release.
 

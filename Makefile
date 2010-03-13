@@ -1,7 +1,7 @@
 # $Id$
 
 NAME=mysqlbackup
-VERSION=1.2
+VERSION=2.0
 DIST?=f11
 ARCH=noarch
 
