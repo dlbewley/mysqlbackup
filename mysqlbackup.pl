@@ -156,7 +156,21 @@ my $vars = get_mysql_vars();
 
 # flush tables and rotate binary log
 print "Flushing tables and rotating binary log if enabled\n" if ($conf{'verbose'});
-system $conf{'mysql_admin_exec'}, 'refresh' if (! $conf{'test'});
+if (! $conf{'test'}) {
+    my @args = ('-u', $conf{'user'}, "--password=$conf{'pass'}", 'refresh');
+    system $conf{'mysql_admin_exec'}, @args;
+    # check result
+    if ($? != 0 ) {
+        if ($? == -1) {
+            print "failed to execute: $!\n";
+        } elsif ($? & 127) {
+            printf "child died with signal %d, %s coredump\n",
+                   ($? & 127),  ($? & 128) ? 'with' : 'without';
+        } else {
+            printf "child exited with value %d\n", $? >> 8;
+        }
+    }
+}
 
 # check if binary logging is enabled.
 if ($vars->{'log_bin'} eq 'ON') {
