@@ -1,12 +1,10 @@
-# $Id$
-Summary: Automate backup of mysql databases.
+Summary: Automatically backup mysql databases
 Name: mysqlbackup
 Version: 2.0
-Release: 1.%(date +%%Y%%m%%d).ucd%{?dist}
+Release: 1.%(date +%%Y%%m%%d).bis%{?dist}
 License: GPL+
 Group: Applications/System
-URL: https://cvs.lib.ucdavis.edu/viewvc/%{name}
-Vendor: UCD Library
+URL: http://www.github.com/dlbewley/%{name}
 Group: System Environment/Shells
 Source: %{name}-%{version}.tgz
 Provides: %{name}
