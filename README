@@ -1,2 +1,22 @@
-# $Id$
-Script to backup all mysql databases.
+# mysqlbackup.pl v1.0 dale a/t bewley.net 04/22/2000
+
+Script to backup all local mysql databases.
+
+Based on ideas from:
+ http://perl.apache.org/guide/snippets.html#Mysql_Backup_and_Restore_Scripts
+ http://jeremy.zawodny.com/mysql/mysqlsnapshot/
+
+What this script does:
+ 1. Obtain a list of databases
+ 2. Dump all the databases into a separate dump files (these dump files
+    are ready for DB restore)
+ 3. Backup the last update log file and create a new log file
+    Is this the safest way to do that???
+
+Todo:
+ o No need to do a full dump each time, add a switch to only rotate the update log.
+ o Log actions
+ o Add support for a config file.
+ o All the basics are fine and stable, but I haven't revisited the transaction
+   log rotation for quite a while.
+#

@@ -1,8 +1,7 @@
 #!/usr/bin/perl -w
 ################################################################################
-my $VERSION='$Id$';
-#-------------------------------------------------------------------------------
 # mysqlbackup.pl v1.0 dale@bewley.net 04/22/2000 
+#-------------------------------------------------------------------------------
 #
 # Based on ideas from:
 #  http://perl.apache.org/guide/snippets.html#Mysql_Backup_and_Restore_Scripts
@@ -14,11 +13,6 @@ my $VERSION='$Id$';
 # 	are ready for DB restore)
 # 	3. backs up the last update log file and creates a new log file
 #		Is this the safest way to do that???
-#
-# Todo
-#	o No need to do a full dump each time, add a switch to only rotate
-#	  the update log.
-#	o Log actions
 #
 ################################################################################
 
@@ -77,7 +71,6 @@ sub help($) {
    my $conf = shift;
    my $exclude_dbs = join(' ',@{$conf->{'exclude_dbs'}});
    print <<"EOH";
-$VERSION
 
 Usage: $0 [options]
 
