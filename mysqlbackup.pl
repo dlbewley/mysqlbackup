@@ -20,6 +20,7 @@ use strict;
 use warnings;
 use DBI;
 use Getopt::Long;
+use Config::General qw(ParseConfig);
 
 # Prototypes
 sub query_to_hash($);
@@ -27,29 +28,13 @@ sub run_query($);
 sub help($);
 sub get_mysql_vars();
 
-################################################################################
-# Adjust the following defaults for your site.
-my %conf = (
-    # See http://www.mysql.com/php/manual.php3?section=>Option_files
-    my_cnf 	    => '/root/.my.cnf', # may contain user and password
-    user	    => '',	# will be read from $conf{'my_cnf'}
-    pass	    => '',	# will be read from $conf{'my_cnf'}
-    database	=> 'mysql', # db used to create a handle for listing all db's
-    host  	    => 'localhost', # host running mysql to be backed up
-    exclude_dbs => [ qw( information_schema ) ], # do not backup these DBs
 
-    dump_dir   => "/var/backup/mysql", # where to place backups
-    min_binary_logs => 4, # how many logs to retain
-    test       => 0, # don't make any changes
-    verbose    => 0, # chatty kathy
-    help       => 0, # show help and exit
-    not_master => 0, # TODO unused
+my $CONFIG_FILE = "mysqlbackup.cfg";
 
-    # executables
-    mysql_admin_exec => "/usr/bin/mysqladmin",
-    gzip_exec  => "/bin/gzip",
-);
-################################################################################
+my %conf = ParseConfig(
+		-ConfigFile => $CONFIG_FILE, 
+		-AutoTrue => 1,
+	);
 
 GetOptions(
     "h|help"             => \$conf{help},
@@ -65,16 +50,26 @@ GetOptions(
     "n|nomaster"         => \$conf{not_master},
 );
 
+# force an array even if only 1 argument
+my @exclude=();
+if(ref($conf{'exclude_dbs'}) eq "ARRAY") {
+  @exclude = @{$conf{'exclude_dbs'}};
+} else {
+  @exclude = ($conf{'exclude_dbs'});
+}
+@{$conf{'exclude_dbs'}} = @exclude;
+
 if ($conf{'help'}) { help(\%conf) && exit; }
 
 sub help($) {
    my $conf = shift;
-   my $exclude_dbs = join(' ',@{$conf->{'exclude_dbs'}});
+   my $exclude_dbs = join(' ',@{$conf{'exclude_dbs'}});
    print <<"EOH";
 
 Usage: $0 [options]
 
  Options            Defaults
+ ------------------ ---------------------------------------------------------------
    -h | --help      This screen.
 
    -m | --mycnf     $conf->{'my_cnf'}
@@ -124,8 +119,8 @@ if ($conf{'my_cnf'} && ! $conf{'pass'}) {
 		# skip comments
 		(/^\s*[#|;]/ && next) || chomp;
 		my ($key,$val) = split(/\s*=\s*/);
-        # don't clobber user supplied values
-        if ($key eq 'user')     { !$conf{'user'} && ($conf{'user'} = $val) }
+		# don't clobber user supplied values
+		if ($key eq 'user')     { !$conf{'user'} && ($conf{'user'} = $val) }
 		if ($key eq 'password') { !$conf{'pass'} && ($conf{'pass'} = $val) } 
 	}
 }
@@ -139,6 +134,8 @@ $dbh->{RaiseError} = 1;
 # get list of databases.
 my @db_names = $dbh->func('_ListDBs');
 print "Found databases: ", join(', ', @db_names), "\n" if ($conf{'verbose'});
+print "Skipping databases: ", join(', ', @{$conf{'exclude_dbs'}}), "\n" if ($conf{'verbose'});
+
 
 # did we get a list?
 $db_names[0] || die "Can not find list of databases. $!";
