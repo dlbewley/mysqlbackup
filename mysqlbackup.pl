@@ -14,6 +14,11 @@
 # 	3. backs up the last update log file and creates a new log file
 #		Is this the safest way to do that???
 #
+# Bugs / Todo:
+#	o Reading the list of databases can use command line credentials or
+#	  use a my.cnf file, but the actual dump requires a my.cnf file with
+#	  credentials. The latter is more secure anyway.
+#
 ################################################################################
 
 use strict;
@@ -28,8 +33,9 @@ sub run_query($);
 sub help($);
 sub get_mysql_vars();
 
-
+#my $CONFIG_FILE = "/etc/mysqlbackup/mysqlbackup.cfg";
 my $CONFIG_FILE = "mysqlbackup.cfg";
+
 
 my %conf = ParseConfig(
 		-ConfigFile => $CONFIG_FILE, 
@@ -42,7 +48,7 @@ GetOptions(
     "u|user=s"           => \$conf{user},
     "p|pass|password=s"  => \$conf{pass},
     "m|mycnf=s"          => \$conf{my_cnf},
-    "s|skip-database=s@" => \$conf{exclude_dbs},
+    'x|exclude=s@'       => \$conf{exclude},
     "l|min-logs=i"       => \$conf{min_binary_logs},
     "d|dir|dump-dir=s"   => \$conf{dump_dir},
     "v|verbose"          => \$conf{verbose},
@@ -51,19 +57,19 @@ GetOptions(
 );
 
 # force an array even if only 1 argument
-my @exclude=();
-if(ref($conf{'exclude_dbs'}) eq "ARRAY") {
-  @exclude = @{$conf{'exclude_dbs'}};
-} else {
-  @exclude = ($conf{'exclude_dbs'});
+if(ref($conf{'exclude'}) ne "ARRAY") {
+	#print "convert scalar to array"; #debug
+	my @exclude = ($conf{'exclude'});
+	delete $conf{'exclude'};
+	@{$conf{'exclude'}} = @exclude;
 }
-@{$conf{'exclude_dbs'}} = @exclude;
 
 if ($conf{'help'}) { help(\%conf) && exit; }
 
 sub help($) {
    my $conf = shift;
-   my $exclude_dbs = join(' ',@{$conf{'exclude_dbs'}});
+   my $exclude = join(' ',@{$conf{'exclude'}});
+
    print <<"EOH";
 
 Usage: $0 [options]
@@ -84,7 +90,7 @@ Usage: $0 [options]
    --host           $conf->{'host'}
                     Host running mysql to be backed up.
 
-   -s | --skip-database  $exclude_dbs
+   -x | --exclude  $exclude
                     Do not backup these databases. Perhaps you have a read-only
                     database which needs infrequent backups.
 
@@ -134,7 +140,7 @@ $dbh->{RaiseError} = 1;
 # get list of databases.
 my @db_names = $dbh->func('_ListDBs');
 print "Found databases: ", join(', ', @db_names), "\n" if ($conf{'verbose'});
-print "Skipping databases: ", join(', ', @{$conf{'exclude_dbs'}}), "\n" if ($conf{'verbose'});
+print "Skipping databases: ", join(', ', @{$conf{'exclude'}}), "\n" if ($conf{'verbose'});
 
 
 # did we get a list?
@@ -196,13 +202,13 @@ my $timestamp = "$date.$time";
 
 # dump all the DBs we want to backup
 foreach my $db_name (@db_names) {
-    next if (grep( /^$db_name$/, @{$conf{'exclude_dbs'}}));
+    next if (grep( /^$db_name$/, @{$conf{'exclude'}}));
     print "Backing up: $db_name\n" if ($conf{'verbose'});
 
-	my $dump_file = "$conf{'dump_dir'}/$timestamp.$db_name.sql";
+    my $dump_file = "$conf{'dump_dir'}/$timestamp.$db_name.sql";
     # http://dev.mysql.com/doc/mysql/en/mysqldump.html
     # TODO add support for command line user / pass
-	my $dump_command = "/usr/bin/mysqldump --defaults-extra-file=$conf{'my_cnf'} --opt '$db_name' > '$dump_file'";
+    my $dump_command = "/usr/bin/mysqldump --defaults-extra-file=$conf{'my_cnf'} --opt '$db_name' > '$dump_file'";
     if (! $conf{'test'}) {
         system $dump_command;
     } else {
