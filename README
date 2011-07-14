@@ -1,6 +1,6 @@
 # mysqlbackup.pl v1.0 dale a/t bewley.net 04/22/2000
 
-Script to backup all local mysql databases.
+Script to backup mysql databases.
 
 Based on ideas from:
  http://perl.apache.org/guide/snippets.html#Mysql_Backup_and_Restore_Scripts
@@ -13,10 +13,20 @@ What this script does:
  3. Backup the last update log file and create a new log file
     Is this the safest way to do that???
 
+Usage:
+ Edit default options in /etc/mysqlbackup/mysqlbackup.cfg.
+ Add mysql root user credentions to /etc/mysqlbackup/my.cnf.
+ Test the script by hand 'mysqlbackup -h'.
+ Wait for cronjob to fire in the morning.
+ 
 Todo:
  o No need to do a full dump each time, add a switch to only rotate the update log.
  o Log actions
- o Add support for a config file.
  o All the basics are fine and stable, but I haven't revisited the transaction
    log rotation for quite a while.
-#
+ o Cronjob removes backups over 14 days. Add switch to mysqlbackup for purging
+   and move retention period to the config file.
+ o Run as non-root and tighen perms on config files.
+ o Add --include option as compliment to --exclude option.
+ o Some executable locations were hard coded because this bounced around on a solaris
+   box for a while. Clean that up, and just use the path.
