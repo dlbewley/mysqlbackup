@@ -1,6 +1,5 @@
 #!/bin/sh
-# $Id$
 # create mysql backups every morning
-/usr/bin/mysqlbackup.pl
+/usr/bin/mysqlbackup
 # also remove old backups over 14 days old
 find /var/backup/mysql -mtime +14 -exec rm {} \; > /dev/null
