@@ -26,7 +26,7 @@ Todo:
    log rotation for quite a while.
  o Cronjob removes backups over 14 days. Add switch to mysqlbackup for purging
    and move retention period to the config file.
- o Run as non-root and tighen perms on config files.
- o Add --include option as compliment to --exclude option.
+ o Run as non-root
  o Some executable locations were hard coded because this bounced around on a solaris
    box for a while. Clean that up, and just use the path.
+ o The my.cnf is required by the dump command. So, command line user/pass is ignored.

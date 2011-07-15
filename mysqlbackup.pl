@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 ################################################################################
 # mysqlbackup.pl v1.0 dale@bewley.net 04/22/2000 
 #-------------------------------------------------------------------------------
@@ -22,7 +22,7 @@
 ################################################################################
 
 use strict;
-use warnings;
+#use warnings;
 use DBI;
 use Getopt::Long;
 use Config::General qw(ParseConfig);
@@ -33,9 +33,7 @@ sub run_query($);
 sub help($);
 sub get_mysql_vars();
 
-#my $CONFIG_FILE = "/etc/mysqlbackup/mysqlbackup.cfg";
-my $CONFIG_FILE = "mysqlbackup.cfg";
-
+my $CONFIG_FILE = "/etc/mysqlbackup/mysqlbackup.cfg";
 
 my %conf = ParseConfig(
 		-ConfigFile => $CONFIG_FILE, 
@@ -48,6 +46,7 @@ GetOptions(
     "u|user=s"           => \$conf{user},
     "p|pass|password=s"  => \$conf{pass},
     "m|mycnf=s"          => \$conf{my_cnf},
+    'i|include=s@'       => \$conf{include},
     'x|exclude=s@'       => \$conf{exclude},
     "l|min-logs=i"       => \$conf{min_binary_logs},
     "d|dir|dump-dir=s"   => \$conf{dump_dir},
@@ -58,19 +57,26 @@ GetOptions(
 
 # force an array even if only 1 argument
 if(ref($conf{'exclude'}) ne "ARRAY") {
-	#print "convert scalar to array"; #debug
-	my @exclude = ($conf{'exclude'});
-	delete $conf{'exclude'};
-	@{$conf{'exclude'}} = @exclude;
+    my @exclude = ($conf{'exclude'});
+    delete $conf{'exclude'};
+    @{$conf{'exclude'}} = @exclude;
+}
+
+# force an array even if only 1 argument
+if(ref($conf{'include'}) ne "ARRAY") {
+    my @include = ($conf{'include'});
+    delete $conf{'include'};
+    @{$conf{'include'}} = @include;
 }
 
 if ($conf{'help'}) { help(\%conf) && exit; }
 
 sub help($) {
-   my $conf = shift;
-   my $exclude = join(' ',@{$conf{'exclude'}});
+    my $conf = shift;
+    my $exclude = join(' ',@{$conf{'exclude'}});
+    my $include = join(' ',@{$conf{'include'}});
 
-   print <<"EOH";
+    print <<"EOH";
 
 Usage: $0 [options]
 
@@ -90,9 +96,11 @@ Usage: $0 [options]
    --host           $conf->{'host'}
                     Host running mysql to be backed up.
 
+   -i | --include  $include
+                    Backup these databases only.
+
    -x | --exclude  $exclude
-                    Do not backup these databases. Perhaps you have a read-only
-                    database which needs infrequent backups.
+                    Do not backup these databases.
 
    -d | --dir | --dump-dir $conf->{'dump_dir'}
                     Where to place backups.
@@ -141,6 +149,9 @@ $dbh->{RaiseError} = 1;
 my @db_names = $dbh->func('_ListDBs');
 print "Found databases: ", join(', ', @db_names), "\n" if ($conf{'verbose'});
 print "Skipping databases: ", join(', ', @{$conf{'exclude'}}), "\n" if ($conf{'verbose'});
+if (scalar @{$conf{'include'}}) {
+	print "Including only databases: ", join(', ', @{$conf{'include'}}), "\n" if ($conf{'verbose'});
+}
 
 
 # did we get a list?
@@ -203,6 +214,9 @@ my $timestamp = "$date.$time";
 # dump all the DBs we want to backup
 foreach my $db_name (@db_names) {
     next if (grep( /^$db_name$/, @{$conf{'exclude'}}));
+    if ($conf{'include'}[0]) {
+	    next if (! grep( /^$db_name$/, @{$conf{'include'}}));
+    }
     print "Backing up: $db_name\n" if ($conf{'verbose'});
 
     my $dump_file = "$conf{'dump_dir'}/$timestamp.$db_name.sql";
