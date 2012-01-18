@@ -33,8 +33,7 @@ sub run_query($);
 sub help($);
 sub get_mysql_vars();
 
-#my $CONFIG_FILE = "/etc/mysqlbackup/mysqlbackup.cfg";
-my $CONFIG_FILE = "mysqlbackup.cfg";
+my $CONFIG_FILE = "/etc/mysqlbackup/mysqlbackup.cfg";
 
 
 my %conf = ParseConfig(
