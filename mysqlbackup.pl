@@ -49,6 +49,8 @@ GetOptions(
     'i|include=s@'       => \$conf{include},
     'x|exclude=s@'       => \$conf{exclude},
     "l|min-logs=i"       => \$conf{min_binary_logs},
+    "k|keep-days=i"      => \$conf{keep_days},
+    "purge"              => \$conf{purge},
     "d|dir|dump-dir=s"   => \$conf{dump_dir},
     "v|verbose"          => \$conf{verbose},
     "t|test"             => \$conf{test},
@@ -107,6 +109,12 @@ Usage: $0 [options]
 
    -l | --min-logs  $conf->{'min_binary_logs'}
                     Retain at least this many binary logs.
+
+   -k | --keep-days $conf->{'keep_days'}
+                    Retain this many days of backups. Use with --purge option.
+
+   --purge
+                    Purge backups older than $conf->{'keep_days'} days.
 
    -v | --verbose   $conf->{'verbose'}
                     Provide more feedback.
@@ -207,9 +215,9 @@ $dbh->disconnect;
 
 # convert unix time to date + time
 my ($sec,$min,$hour,$mday,$mon,$year) = localtime(time);
-my $time  = sprintf("%0.2d:%0.2d:%0.2d",$hour,$min,$sec);
-my $date  = sprintf("%0.4d.%0.2d.%0.2d",$year+1900,++$mon,$mday);
-my $timestamp = "$date.$time";
+my $date  = sprintf("%04d%02d%02d",$year+1900,++$mon,$mday);
+my $time  = sprintf("%02d%02d%02d",$hour,$min,$sec);
+my $timestamp = "$date-$time";
 
 # dump all the DBs we want to backup
 foreach my $db_name (@db_names) {
