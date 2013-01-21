@@ -1,7 +1,7 @@
 Summary: Automatically backup mysql databases
 Name: mysqlbackup
 Version: 2.0
-Release: 2.%(date +%%Y%%m%%d).bis%{?dist}
+Release: 3.%(date +%%Y%%m%%d).bis%{?dist}
 License: GPL+
 Group: Applications/System
 URL: http://www.github.com/dlbewley/%{name}
